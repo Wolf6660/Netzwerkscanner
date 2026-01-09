@@ -1,4 +1,4 @@
-Netzwerkscanner
+<h1>Netzwerkscanner</h1>
 Kleine Weboberfläche (Docker- und Synology-tauglich), mit der sich per Klick IP-Bereiche – auch über Site-to-Site-VPN – scannen lassen. Gefundene Geräte werden inklusive Hostname als Up/Down angezeigt.
 
 Zusätzlich können pro IP Alias-Namen und Notizen gespeichert werden, die bei späteren Scans automatisch wieder erscheinen.
