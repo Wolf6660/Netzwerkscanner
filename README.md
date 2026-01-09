@@ -11,12 +11,16 @@ die beim nächsten Scan wieder erscheinen. Preset-Buttons lassen sich im UI konf
 - Alias-Namen + Notizen pro IP (SQLite persistent)
 - Einstellungsseite zum Verwalten der Presets
 
+<h2>Docker</h2>
+- git clone https://github.com/DEINNAME/netscan-web.git
+- cd netscan-web
 
 <h2>Synology (Container Manager)</h2>
 - Repo/Ordner auf die Synology kopieren (z.B. /volume1/docker/netscan-web)
-- Container Manager → Projekt → Erstellen → docker-compose.yml auswählen
+  (auf den grünen Button code klicken und auf Download zip) 
+- Container Manager → Projekt → Erstellen → Ordner auswählen und die abfrage ob docker-compose.yml genutz werden soll bestätigen
 - Projekt starten
-- http://<synology>:22222 öffnen
+- http://<synology>:22222 öffnen (ist in der docker-compose.yml anpassbar)
 
 Ports / VPN Tipps
 Für VPN meist besser: TCP-Ping aktivieren (Ports z.B. 22,80,443,445,3389)
