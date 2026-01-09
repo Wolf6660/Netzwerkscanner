@@ -12,7 +12,7 @@ die beim nächsten Scan wieder erscheinen. Preset-Buttons lassen sich im UI konf
 - Einstellungsseite zum Verwalten der Presets
 
 
-Synology (Container Manager)
+<h2>Synology (Container Manager)</h2>
 - Repo/Ordner auf die Synology kopieren (z.B. /volume1/docker/netscan-web)
 - Container Manager → Projekt → Erstellen → docker-compose.yml auswählen
 - Projekt starten
