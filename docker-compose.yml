@@ -1,0 +1,9 @@
+services:
+  netscan:
+    build: .
+    container_name: netscan
+    ports:
+      - "22222:22222"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
