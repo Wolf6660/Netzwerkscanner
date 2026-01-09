@@ -5,8 +5,8 @@ Zusätzlich können pro IP Alias-Namen und Notizen gespeichert werden, die bei s
 Über die Oberfläche lassen sich frei konfigurierbare Preset-Buttons für häufig genutzte IP-Bereiche anlegen.
 
 <h2>Funktionen</h2>
-- Preset-Buttons für IP-Bereiche (Name + Range)
-- Manuelle Eingabe von IP-Bereichen:
+- Preset-Buttons für IP-Bereiche (Name + Range)<br>
+- Manuelle Eingabe von IP-Bereichen:<br>
    - CIDR (z. B. 10.10.0.0/24)
    - Start–Ende (z. B. 10.10.0.10-10.10.0.50)
 - Scan via nmap -sn
