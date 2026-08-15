@@ -3,3 +3,4 @@ uvicorn[standard]
 jinja2
 python-multipart
 fritzconnection>=1.14,<2
+paramiko>=3.5,<5

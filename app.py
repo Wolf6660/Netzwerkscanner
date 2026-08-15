@@ -17,6 +17,11 @@ try:
 except ImportError:  # Routerintegration bleibt optional
     FritzHosts = None
 
+try:
+    import paramiko
+except ImportError:  # ASUS-Integration bleibt optional
+    paramiko = None
+
 APP_DIR = Path(__file__).resolve().parent
 DATA_DIR = APP_DIR / "data"
 DB_PATH = DATA_DIR / "netscan.sqlite3"
@@ -65,7 +70,7 @@ def init_db() -> None:
             "tcp_ping INTEGER NOT NULL DEFAULT 1", "ports TEXT NOT NULL DEFAULT '22,80,443,445,3389'",
             "reverse_dns INTEGER NOT NULL DEFAULT 1", "router_type TEXT NOT NULL DEFAULT 'none'",
             "router_host TEXT NOT NULL DEFAULT ''", "router_user TEXT NOT NULL DEFAULT ''",
-            "router_password TEXT NOT NULL DEFAULT ''",
+            "router_password TEXT NOT NULL DEFAULT ''", "router_port INTEGER NOT NULL DEFAULT 22",
         ):
             add_column(conn, "presets", definition)
         conn.execute("""CREATE TABLE IF NOT EXISTS devices (
@@ -114,6 +119,16 @@ def target_contains(target_range: str, ip: str) -> bool:
     return address in ipaddress.ip_network(target_range, strict=False)
 
 
+def display_range(target_range: str) -> str:
+    """Kürzt nur die Anzeige privater 192.168-Netze, niemals den Scanwert."""
+    if not target_range.startswith("192.168."):
+        return target_range
+    if "-" in target_range:
+        start, end = (part.strip().split(".", 2)[2] for part in target_range.split("-", 1))
+        return f"{start} – {end}"
+    return target_range.split(".", 2)[2]
+
+
 def get_networks(include_password: bool = False) -> List[Dict]:
     with db() as conn:
         rows = conn.execute("SELECT * FROM presets ORDER BY sort_order,id").fetchall()
@@ -127,6 +142,7 @@ def get_networks(include_password: bool = False) -> List[Dict]:
         item = dict(row)
         item["range"] = item.pop("ip_range")
         item["has_router_password"] = bool(item.get("router_password"))
+        item["display_range"] = display_range(item["range"])
         if not include_password:
             item.pop("router_password", None)
         result.append(item)
@@ -150,7 +166,7 @@ def save_networks(items: List[Dict]) -> None:
             continue
         ip_range = validate_range(ip_range)
         router_type = str(item.get("router_type") or "none")
-        if router_type not in ("none", "fritzbox"):
+        if router_type not in ("none", "fritzbox", "asus_ssh"):
             raise ValueError("Unbekannter Routertyp.")
         cleaned.append({
             "id": int(item["id"]) if item.get("id") else None,
@@ -162,6 +178,7 @@ def save_networks(items: List[Dict]) -> None:
             "router_host": str(item.get("router_host") or "").strip(),
             "router_user": str(item.get("router_user") or "").strip(),
             "router_password": str(item.get("router_password") or ""),
+            "router_port": min(65535, max(1, int(item.get("router_port") or 22))),
         })
     with db() as conn:
         existing = {row["id"] for row in conn.execute("SELECT id FROM presets")}
@@ -173,14 +190,15 @@ def save_networks(items: List[Dict]) -> None:
                 params = [item[k] for k in ("name", "range", "tcp_ping", "ports", "reverse_dns", "router_type", "router_host", "router_user")]
                 if item["router_password"]:
                     params.append(item["router_password"])
-                params += [order, item["id"]]
+                params += [item["router_port"], order, item["id"]]
                 conn.execute(f"""UPDATE presets SET name=?,ip_range=?,tcp_ping=?,ports=?,reverse_dns=?,
-                    router_type=?,router_host=?,router_user=?,{password_sql},sort_order=? WHERE id=?""", params)
+                    router_type=?,router_host=?,router_user=?,{password_sql},router_port=?,sort_order=? WHERE id=?""", params)
             else:
                 cur = conn.execute("""INSERT INTO presets(name,ip_range,tcp_ping,ports,reverse_dns,
-                    router_type,router_host,router_user,router_password,sort_order) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                    router_type,router_host,router_user,router_password,router_port,sort_order) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
                     (item["name"], item["range"], item["tcp_ping"], item["ports"], item["reverse_dns"],
-                     item["router_type"], item["router_host"], item["router_user"], item["router_password"], order))
+                     item["router_type"], item["router_host"], item["router_user"], item["router_password"],
+                     item["router_port"], order))
                 kept.add(cur.lastrowid)
         for old_id in existing - kept:
             conn.execute("DELETE FROM presets WHERE id=?", (old_id,))
@@ -204,6 +222,64 @@ def fritz_hosts(network: Dict) -> Dict[str, Dict]:
         if ip:
             result[ip] = {"mac": normalize_mac(host.get("mac") or ""),
                           "hostname": str(host.get("name") or "").strip(), "source": "FRITZ!Box"}
+    return result
+
+
+def asus_hosts(network: Dict) -> Dict[str, Dict]:
+    """Liest DHCP-Leases und ARP/Neighbor-Daten read-only per SSH aus ASUSWRT."""
+    if network["router_type"] != "asus_ssh":
+        return {}
+    if paramiko is None:
+        raise RuntimeError("ASUS-SSH-Unterstützung ist nicht installiert.")
+    if not network["router_host"] or not network["router_user"]:
+        raise RuntimeError("ASUS-Adresse oder Benutzer fehlt.")
+    client = paramiko.SSHClient()
+    # Der Container besitzt absichtlich keine dauerhafte Benutzer-Home/known_hosts-Datei.
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        client.connect(
+            hostname=network["router_host"], port=int(network.get("router_port") or 22),
+            username=network["router_user"], password=network["router_password"],
+            look_for_keys=False, allow_agent=False, timeout=8, banner_timeout=8, auth_timeout=8,
+        )
+        command = (
+            "cat /var/lib/misc/dnsmasq.leases 2>/dev/null; "
+            "echo __NETSCAN_NEIGH__; "
+            "ip neigh show 2>/dev/null || arp -an 2>/dev/null"
+        )
+        _, stdout, stderr = client.exec_command(command, timeout=12)
+        output = stdout.read().decode("utf-8", "replace")
+        error = stderr.read().decode("utf-8", "replace").strip()
+        status = stdout.channel.recv_exit_status()
+        if status != 0 and not output.strip():
+            raise RuntimeError(error or "ASUS konnte die Clientlisten nicht lesen.")
+    except Exception as exc:
+        raise RuntimeError(f"ASUS nicht erreichbar oder SSH-Anmeldung fehlgeschlagen: {exc}") from exc
+    finally:
+        client.close()
+
+    lease_text, _, neighbor_text = output.partition("__NETSCAN_NEIGH__")
+    result: Dict[str, Dict] = {}
+    for line in lease_text.splitlines():
+        parts = line.split()
+        if len(parts) >= 4:
+            mac, ip, hostname = normalize_mac(parts[1]), parts[2], parts[3]
+            try:
+                ipaddress.ip_address(ip)
+            except ValueError:
+                continue
+            result[ip] = {"mac": mac, "hostname": "" if hostname == "*" else hostname,
+                          "source": "ASUS (SSH)"}
+    patterns = (
+        re.compile(r"^(\d+\.\d+\.\d+\.\d+).*?lladdr\s+([0-9a-f:]{17})", re.I),
+        re.compile(r"\((\d+\.\d+\.\d+\.\d+)\)\s+at\s+([0-9a-f:]{17})", re.I),
+    )
+    for line in neighbor_text.splitlines():
+        match = next((pattern.search(line) for pattern in patterns if pattern.search(line)), None)
+        if match:
+            ip, mac = match.group(1), normalize_mac(match.group(2))
+            entry = result.setdefault(ip, {"mac": mac, "hostname": "", "source": "ASUS (SSH)"})
+            entry["mac"] = entry["mac"] or mac
     return result
 
 
@@ -234,9 +310,9 @@ def scan_network(network: Dict) -> tuple[List[Dict], List[str]]:
         raise RuntimeError(proc.stderr.strip() or "nmap-Fehler")
     warnings = []
     router = {}
-    if network["router_type"] == "fritzbox":
+    if network["router_type"] in ("fritzbox", "asus_ssh"):
         try:
-            router = fritz_hosts(network)
+            router = fritz_hosts(network) if network["router_type"] == "fritzbox" else asus_hosts(network)
         except RuntimeError as exc:
             warnings.append(str(exc))
     found = {}
@@ -257,12 +333,12 @@ def scan_network(network: Dict) -> tuple[List[Dict], List[str]]:
         extra = router.get(ip, {})
         found[ip] = {"ip": ip, "mac": mac or extra.get("mac", ""),
                      "hostname": hostname or extra.get("hostname", ""), "vendor": vendor,
-                     "source": "nmap + FRITZ!Box" if extra else "nmap"}
+                     "source": f"nmap + {extra.get('source', 'Router')}" if extra else "nmap"}
     for ip, extra in router.items():
         try:
             if target_contains(network["ip_range"], ip):
                 found.setdefault(ip, {"ip": ip, "mac": extra["mac"], "hostname": extra["hostname"],
-                                      "vendor": "", "source": "FRITZ!Box"})
+                                      "vendor": "", "source": extra.get("source", "Router")})
         except ValueError:
             pass
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
