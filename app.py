@@ -298,7 +298,11 @@ def scan_network(network: Dict) -> tuple[List[Dict], List[str]]:
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request, "networks": get_networks()})
+    return templates.TemplateResponse(
+        request=request,
+        name="index.html",
+        context={"networks": get_networks()},
+    )
 
 
 @app.post("/scan/{network_id}")
@@ -334,7 +338,11 @@ def alias_delete(network_id: int = Form(...), identity: str = Form(...)):
 
 @app.get("/settings", response_class=HTMLResponse)
 def settings(request: Request):
-    return templates.TemplateResponse("settings.html", {"request": request, "networks": get_networks()})
+    return templates.TemplateResponse(
+        request=request,
+        name="settings.html",
+        context={"networks": get_networks()},
+    )
 
 
 @app.post("/settings/save")
