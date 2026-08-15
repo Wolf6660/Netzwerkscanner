@@ -2,8 +2,9 @@ services:
   netscan:
     build: .
     container_name: netscan
-    ports:
-      - "22222:22222"
+    # Für ARP/MAC-Erkennung im lokalen Netz der Synology erforderlich.
+    # Die Anwendung bleibt über Port 22222 der Synology erreichbar.
+    network_mode: host
     volumes:
       - ./data:/app/data
     cap_add:

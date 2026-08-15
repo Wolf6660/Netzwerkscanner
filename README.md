@@ -19,6 +19,8 @@ docker compose up -d --build
 
 Danach ist NetScan unter `http://<synology-ip>:22222` erreichbar. Die Datenbank liegt ausschließlich in `./data` und wird nicht in Git eingecheckt.
 
+Der Container läuft im Host-Netzwerkmodus. Nur so kann Nmap im lokalen Netz der Synology ARP und MAC-Adressen zuverlässig erfassen. Für geroutete VPN-Netze gilt weiterhin die unten beschriebene Einschränkung.
+
 ## FRITZ!Box
 
 In der FRITZ!Box einen eigenen Benutzer mit Heimnetz-Zugriff anlegen und in NetScan beim betreffenden Netzwerk `FRITZ!Box (TR-064)` wählen. Adresse, Benutzer und Passwort werden nur in der lokalen SQLite-Datenbank gespeichert. Fällt die Routerabfrage aus, wird der normale Nmap-Scan trotzdem angezeigt und die Oberfläche gibt eine Warnung aus.
